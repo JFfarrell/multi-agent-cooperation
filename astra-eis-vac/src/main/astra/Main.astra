@@ -1,0 +1,32 @@
+agent Main {
+    module Console console;
+    module System system;
+	module EIS ei;
+    module Debug debug;
+	module Prelude prelude;
+	module Methods methods;
+	
+	rule +!main(list args) {
+		ei.launch("vw","dependency/vacuumworld-1.2.0.jar");
+		ei.init([generation("no")]);
+		ei.join();
+		ei.startEnv();
+
+		list entities = ei.freeEntities();
+		
+		// create two coordinate lists, forwards and reverse
+		list grid = [];
+		list reverseGrid = [];
+		methods.grid(grid);
+		methods.reverseGrid(reverseGrid);
+		
+		int index = 0;
+        forall (string entity : entities) {
+			list remit = prelude.valueAsList(grid, index);
+			list reverseRemit = prelude.valueAsList(reverseGrid, index);
+			system.createAgent(entity, "Vac");
+			system.setMainGoal(entity, [entity, remit, reverseRemit]);
+			index ++;
+	    } 
+	}
+}

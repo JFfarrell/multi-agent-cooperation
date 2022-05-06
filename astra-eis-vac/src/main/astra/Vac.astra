@@ -1,0 +1,285 @@
+agent Vac {
+    module Console console;
+    module EIS ei;
+    module System system;
+    module Methods methods;
+    module Prelude prelude;
+
+    types vac {
+        formula moveSouth(boolean);
+        formula moveNorth(boolean);
+        formula moveWest(boolean);
+        formula moveEast(boolean);
+        formula atX(boolean);
+        formula atY(boolean);
+        formula yDestination(int);
+        formula xDestination(int);
+        formula lock(boolean);
+    }
+
+    initial moveSouth(false);
+    initial moveNorth(false);
+    initial moveWest(false);
+    initial moveEast(false);
+    initial atY(false);
+    initial atX(false);
+    initial yDestination(-1);
+    initial xDestination(-1);
+    initial lock(false);
+
+    rule +!main([string name, list remit, list reverseRemit]) {
+        ei.launch("vw","dependency/vacuumworld-1.2.0.jar");
+        ei.join();
+        ei.link(name);
+        console.println(name);
+
+        // establish initial goal destination
+        list firstDestination = prelude.valueAsList(remit, 0);
+        int currentX = prelude.valueAsInt(firstDestination, 0);
+        int currentY = prelude.valueAsInt(firstDestination, 1);
+
+        -yDestination(-1); +yDestination(currentY);
+        -xDestination(-1); +xDestination(currentX);
+
+        // keep the bots moving at start so percepts don't lock out
+        while (moveSouth(false) & moveNorth(false) & moveWest(false) & moveEast(false)) {
+            ei.move("left", 1);
+            system.sleep(500);
+        }
+
+        // initiate main action cycle
+        while (true) {
+            list directions = ["forward", "left", "back", "right"];
+            int reverseSize = prelude.size(reverseRemit);
+            int remitSize = prelude.size(remit);
+
+            // y axis movement takes priority just to avoid confusion - arbitrary
+            while (atY(false)) !moveVertical(directions);
+        
+            while (atX(false) & atY(true)) !moveHorizontal(directions);
+                
+            // if remit size = 0, remit list is finished, move to reverse list
+            if (atX(true) & atY(true) & remitSize > 0) {
+                list currentDestination = prelude.valueAsList(remit, 0);
+                console.println(name + "-" + currentDestination);
+                !changeDestination(remit, currentDestination);
+            }
+
+            if (remitSize == 0 & reverseSize > 0) {
+                console.println("using reverse list");
+                list currentDestination = prelude.valueAsList(reverseRemit, 0);
+                console.println(name + "-" + currentDestination);
+                !changeDestination(reverseRemit, currentDestination);
+            }
+        }
+    }
+
+    rule +!changeDestination(list remit, list currentDest) : atX(true) & atY(true) { 
+        -lock(false);+lock(true);
+
+        console.println("at goal destination");
+        ei.light("on");
+        system.sleep(3000);
+        ei.light("off");
+        
+        // change the destination coordinates to next item in list
+        int remitSize = prelude.size(remit);
+        console.println(remitSize);
+        console.println(remit);
+        if (remitSize > 1) {
+            !setDestination(remit, 1, currentDest);
+        }
+
+        else !setDestination(remit, 0, currentDest);
+
+        // remove from current list and add to the future list
+        int count = 0;
+        forall (list coordinate : remit) {
+            if (coordinate == currentDest) {
+                console.println("removing: " + coordinate);
+                prelude.remove(remit, count);
+            }
+            count ++;
+        }
+
+        // reset all percepts so we can move again
+        -atX(true); +atX(false);
+        -atY(true); +atY(false);
+        -moveWest(false); +moveWest(true);
+        -moveEast(false); +moveEast(true);
+        -moveSouth(false); +moveSouth(true);
+        -moveNorth(false); +moveNorth(true);
+        -lock(true);+lock(false);      
+    }
+
+    // for changing destination coordinate
+    rule +!setDestination(list remit, int index, list currentDest) {
+        list nextDestination = prelude.valueAsList(remit, index);
+        int nextX = prelude.valueAsInt(nextDestination, 0);
+        int nextY = prelude.valueAsInt(nextDestination, 1);
+        int currentX = prelude.valueAsInt(currentDest, 0);
+        int currentY = prelude.valueAsInt(currentDest, 1);
+
+        -yDestination(currentY); +yDestination(nextY);
+        -xDestination(currentX); +xDestination(nextX);
+    }
+
+    // south movement
+    rule +!moveVertical(list directions) : moveSouth(true) & lock(false) {
+        -lock(false);+lock(true);
+
+        int randomNum = methods.random(0, 3);
+        int randomSteps = methods.random(1, 2);
+        string randDirection = prelude.valueAsString(directions, randomNum);
+
+        if (ei.square("forward", "obstacle")) ei.move(randDirection, randomSteps);
+        
+        else if (ei.square("forward", "vac")) {
+            console.println("friend in way");
+            int random = methods.random(100, 1500);
+            system.sleep(random);
+            ei.move("left", 1);
+        }
+
+        else ei.move("south", 1);
+        ei.clean();
+
+        // all extra movement if dust adjacent - not needed but speeds things up
+        forall (string direction : directions) {
+            if (ei.square(direction, "dust")) {
+                ei.move(direction, 1);
+                ei.clean();
+            }
+        }
+
+        -lock(true);+lock(false);
+        
+    }
+
+    // north movement
+    rule +!moveVertical(list directions) : moveNorth(true) & lock(false) {
+        -lock(false);+lock(true);
+
+        int randomNum = methods.random(0, 3);
+        int randomSteps = methods.random(1, 2);
+        string randDirection = prelude.valueAsString(directions, randomNum);
+
+        if (ei.square("forward", "obstacle")) ei.move(randDirection, randomSteps);
+
+        else if (ei.square("forward", "vac")) {
+            console.println("Friend in way");
+            int random = methods.random(100, 1500);
+            system.sleep(random);
+            ei.move("right", 1);
+        }
+
+        else ei.move("north", 1);
+        ei.clean();
+
+        forall (string direction : directions) {
+            if (ei.square(direction, "dust")) {
+                ei.move(direction, 1);
+                ei.clean();
+            }
+        }
+        
+        -lock(true);+lock(false);      
+    }
+
+    // west movement
+    rule +!moveHorizontal(list directions) : moveWest(true) & lock(false) {
+        -lock(false);+lock(true);
+
+        int randomNum = methods.random(0, 3);
+        int randomSteps = methods.random(1, 2);
+        string randDirection = prelude.valueAsString(directions, randomNum);
+
+        if (ei.square("forward", "obstacle")) ei.move(randDirection, randomSteps);
+
+        else if (ei.square("forward", "vac")) {
+            console.println("friend in way");
+            int random = methods.random(100, 1500);
+            system.sleep(random);
+            ei.move("right", 1);
+        }
+
+        else ei.move("west", 1);
+        ei.clean();
+
+        forall (string direction : directions) {
+            if (ei.square(direction, "dust")) {
+                ei.move(direction, 1);
+                ei.clean();
+            }
+        }
+
+        -lock(true);+lock(false);
+    }
+
+    // east movement
+    rule +!moveHorizontal(list directions) : moveEast(true) & lock(false) {
+        -lock(false);+lock(true);
+         
+        int randomNum = methods.random(0, 3);
+        int randomSteps = methods.random(1, 2);
+        string randDirection = prelude.valueAsString(directions, randomNum);
+
+        if (ei.square("forward", "obstacle")) ei.move(randDirection, randomSteps);
+
+        else if (ei.square("forward", "vac")) {
+            console.println("friend in way");
+            int random = methods.random(100, 1500);
+            system.sleep(random);
+            ei.move("left", 1);
+        }
+
+        else ei.move("east", 1);
+        ei.clean();
+
+        forall (string direction : directions) {
+            if (ei.square(direction, "dust")) {
+                ei.move(direction, 1);
+                ei.clean();
+            }
+        }
+
+        -lock(true);+lock(false);
+    }
+
+    // event to help bots periodically update their 
+    // concepts of where they are in relation to their target
+    rule +$ei.event(location(int x, int y)) : yDestination(int yDestination) & xDestination(int xDestination){
+       
+        if (y < yDestination) {
+            -moveSouth(false); +moveSouth(true);
+            -moveNorth(true); +moveNorth(false);
+        }
+
+        if (y > yDestination) {
+            -moveSouth(true); +moveSouth(false);
+            -moveNorth(false); +moveNorth(true);
+        }
+
+        if (y == yDestination) {
+            -atY(false); +atY(true);
+            -moveSouth(true); +moveSouth(false);
+            -moveNorth(true); +moveNorth(false);
+        }
+        
+        if (x > xDestination) {
+            -moveWest(false); +moveWest(true);
+            -moveEast(true); +moveEast(false);
+        }
+
+        if (x < xDestination) {
+            -moveWest(true); +moveWest(false);
+            -moveEast(false); +moveEast(true);
+        }
+
+        if (x == xDestination) {
+            -atX(false); +atX(true);
+            -moveWest(true); +moveWest(false);
+            -moveEast(true); +moveEast(false);
+        }
+    }
+}
